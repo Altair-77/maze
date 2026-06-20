@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>3D迷路メーカー</title>
 <style>
   :root {
@@ -82,6 +82,9 @@
     cursor: crosshair;
     border: 1px solid #2a2e38;
     box-shadow: 0 0 40px rgba(0,0,0,.5);
+    width: min(96vw, 88vh, 600px);
+    height: min(96vw, 88vh, 600px);
+    touch-action: none;            /* 描画中のスクロール抑止 */
   }
   #coord { position: absolute; bottom: 10px; right: 14px; font-size: 12px; color: var(--muted); background: rgba(0,0,0,.4); padding: 4px 8px; border-radius: 6px; }
 
@@ -102,7 +105,7 @@
   #overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
-    background: rgba(8,10,15,.82); cursor: pointer;
+    background: rgba(8,10,15,.82); cursor: pointer; z-index: 10;
   }
   #overlay h2 { font-size: 28px; margin: 0 0 10px; color: var(--accent); }
   #overlay p { color: var(--muted); max-width: 420px; line-height: 1.7; }
@@ -110,7 +113,7 @@
   #winScreen {
     position: absolute; inset: 0; display: none; flex-direction: column;
     align-items: center; justify-content: flex-end; text-align: center;
-    padding-bottom: 7vh;
+    padding-bottom: 7vh; z-index: 11;
     background: linear-gradient(to bottom, rgba(8,10,6,0) 35%, rgba(8,12,6,.5) 62%, rgba(6,8,4,.88) 100%);
   }
   #winScreen h2 { font-size: 42px; color: var(--accent2); margin: 0 0 6px; text-shadow: 0 0 24px rgba(255,183,77,.7), 0 2px 6px #000; }
@@ -121,6 +124,53 @@
   #minimapWrap { position:absolute; bottom:14px; right:14px; background:rgba(10,13,20,.75); padding:8px; border-radius:10px; border:1px solid #2a2e38; }
   #minimap { display:block; image-rendering:pixelated; border-radius:4px; }
   #minimapWrap .cap { font-size:11px; color:var(--muted); text-align:center; margin-top:4px; }
+
+  /* タッチ操作UI */
+  #game, #game canvas { touch-action: none; }
+  #touchControls { position:absolute; inset:0; display:none; z-index:5; }
+  body.touch #touchControls { display:block; }
+  #joystick {
+    position:absolute; left:max(18px, env(safe-area-inset-left)); bottom:max(26px, env(safe-area-inset-bottom));
+    width:130px; height:130px; border-radius:50%;
+    background:rgba(255,255,255,.07); border:2px solid rgba(255,255,255,.18);
+    touch-action:none;
+  }
+  #joyKnob {
+    position:absolute; left:50%; top:50%; width:58px; height:58px; margin:-29px 0 0 -29px;
+    border-radius:50%; background:rgba(77,208,225,.35); border:2px solid rgba(255,255,255,.5);
+    transition: background .1s;
+  }
+  .touchBtn {
+    position:absolute; border-radius:50%; background:rgba(20,24,32,.72);
+    border:1px solid rgba(255,255,255,.25); color:#fff; font-size:12px; font-weight:bold;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    user-select:none; -webkit-user-select:none; touch-action:none;
+  }
+  .touchBtn:active, .touchBtn.pressed { background:rgba(77,208,225,.55); color:#06262b; }
+  #btnDash { right:max(24px, env(safe-area-inset-right)); bottom:42px; width:88px; height:88px; font-size:14px; }
+  #btnMap  { right:124px; bottom:74px; width:64px; height:64px; }
+  #btnExit { right:14px; top:14px; padding:9px 14px; border-radius:8px; }
+
+  /* スマホ向けレイアウト */
+  body.touch #hud { display:none; }
+  .touch-only { display:none; }
+  body.touch .touch-only { display:inline; }
+  body.touch .desktop-only { display:none; }
+  @media (max-width: 760px) {
+    #editor { flex-direction: column; }
+    #sidebar { width:100%; max-height:48vh; border-right:none; border-bottom:1px solid #000; padding:12px 14px; }
+    h1 { font-size:17px; margin-bottom:2px; }
+    .sub { margin-bottom:10px; }
+    .group { margin-bottom:12px; }
+    button { padding:12px 8px; }
+    #playBtn { font-size:17px; padding:15px; }
+    #canvasWrap { flex:1; min-height:38vh; }
+    #grid { width: min(94vw, 46vh); height: min(94vw, 46vh); }
+    .timer { right:auto; left:50%; transform:translateX(-50%); top:10px; }
+    #minimapWrap { bottom:auto; top:54px; right:10px; padding:5px; }
+    #minimap { width:120px; height:120px; }
+    #minimapWrap .cap { display:none; }
+  }
 </style>
 </head>
 <body>
@@ -191,13 +241,27 @@
     <canvas id="minimap" width="200" height="200"></canvas>
     <div class="cap">探索マップ（<b>M</b>で表示切替）</div>
   </div>
+  <!-- スマホ用タッチ操作 -->
+  <div id="touchControls">
+    <div id="joystick"><div id="joyKnob"></div></div>
+    <div id="btnDash" class="touchBtn">ダッシュ</div>
+    <div id="btnMap" class="touchBtn">🗺地図</div>
+    <div id="btnExit" class="touchBtn">✕ 戻る</div>
+  </div>
   <div id="overlay">
-    <h2>クリックして開始</h2>
-    <p>
+    <h2 class="desktop-only">クリックして開始</h2>
+    <h2 class="touch-only">タップして開始</h2>
+    <p class="desktop-only">
       <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> で移動。<br>
       視点は <b>マウス</b>（ロックされない場合は<b>ドラッグ</b>）または <span class="key">←</span><span class="key">↑</span><span class="key">↓</span><span class="key">→</span>。<br>
       光る<b style="color:var(--accent2)">🏁ゴール</b>を目指しましょう。<br>
       <span class="key">Esc</span> でエディタに戻ります。
+    </p>
+    <p class="touch-only">
+      左下の<b>スティック</b>で移動、<b>画面のドラッグ</b>で視点。<br>
+      <b>ダッシュ</b>ボタンで加速、<b>🗺地図</b>で探索マップ表示。<br>
+      光る<b style="color:var(--accent2)">🏁ファラオ像</b>を目指しましょう。<br>
+      右上の<b>✕ 戻る</b>でエディタへ。
     </p>
   </div>
   <div id="winScreen">
@@ -297,6 +361,21 @@ canvas.addEventListener('mousemove', e => {
   if (painting && (tool === 'wall' || tool === 'erase')) applyTool(c.x, c.y);
 });
 window.addEventListener('mouseup', () => painting = false);
+
+// タッチで迷路を描く
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  painting = true;
+  const c = cellFromEvent(e.touches[0]);
+  applyTool(c.x, c.y);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const c = cellFromEvent(e.touches[0]);
+  document.getElementById('coord').textContent = `${c.x}, ${c.y}`;
+  if (painting && (tool === 'wall' || tool === 'erase')) applyTool(c.x, c.y);
+}, { passive: false });
+canvas.addEventListener('touchend', () => painting = false);
 
 // ツール選択
 document.querySelectorAll('.tool').forEach(btn => {
@@ -1059,14 +1138,19 @@ function loop(t) {
     if (keys['arrowup'])    player.pitch = Math.min(Math.PI / 2 - 0.05, player.pitch + 1.3 * dt);
     if (keys['arrowdown'])  player.pitch = Math.max(-(Math.PI / 2 - 0.05), player.pitch - 1.3 * dt);
 
-    const speed = (keys['shift'] ? 14 : 7);
+    const speed = (keys['shift'] || dashOn ? 14 : 7);
     let fx = 0, fz = 0;
     const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
-    // 前方ベクトル: (-sin, -cos)
+    // 前方ベクトル: (-sin, -cos) / 右方向: (cos, -sin)
     if (keys['w']) { fx += -sin; fz += -cos; }
     if (keys['s']) { fx +=  sin; fz +=  cos; }
     if (keys['a']) { fx += -cos; fz +=  sin; }
     if (keys['d']) { fx +=  cos; fz += -sin; }
+    // 仮想スティック（スマホ）
+    if (joy.active) {
+      fx += -sin * joy.fwd + cos * joy.x;
+      fz += -cos * joy.fwd - sin * joy.x;
+    }
     const len = Math.hypot(fx, fz);
     if (len > 0) {
       fx = fx / len * speed * dt;
@@ -1132,6 +1216,8 @@ function winGame() {
   // 像のショーケースのためHUDを片付ける
   document.getElementById('crosshair').style.display = 'none';
   document.getElementById('minimapWrap').style.display = 'none';
+  document.getElementById('touchControls').style.display = 'none';
+  joy.active = false; dashOn = false;
   // 像の正面がプレイヤーを向くように初期角度を合わせてから回転開始
   if (goalMesh) goalMesh.rotation.y = Math.atan2(player.x - goalMesh.position.x, player.z - goalMesh.position.z);
   const el = (performance.now() - startTime) / 1000;
@@ -1167,12 +1253,14 @@ function startGame() {
   gameDiv.style.display = 'block';
   document.getElementById('winScreen').style.display = 'none';
   won = false;
+  joy.active = false; joy.x = 0; joy.fwd = 0; dashOn = false;  // タッチ状態リセット
 
   setupRenderer();
   buildScene();
   mapVisible = true;
   document.getElementById('minimapWrap').style.display = 'block';
   document.getElementById('crosshair').style.display = 'block';
+  document.getElementById('touchControls').style.display = '';  // CSS(body.touch)に戻す
   drawMinimap();   // 初期表示（スタート地点）
   document.getElementById('overlay').style.display = 'flex';
   startTime = 0;
@@ -1246,6 +1334,76 @@ gameDiv.addEventListener('mousedown', e => {
   dragging = true; lastMX = e.clientX; lastMY = e.clientY;
 });
 window.addEventListener('mouseup', () => dragging = false);
+
+// ===== スマホ用タッチ操作 =====
+let joy = { x: 0, fwd: 0, active: false };
+let dashOn = false;
+const isTouch = window.matchMedia('(pointer: coarse)').matches;
+if (isTouch) document.body.classList.add('touch');
+
+(function setupTouch() {
+  const joyEl = document.getElementById('joystick');
+  const knob = document.getElementById('joyKnob');
+  const R = 50;                 // スティック可動半径(px)
+  let joyId = null, lookId = null, lookX = 0, lookY = 0, joyCx = 0, joyCy = 0;
+
+  const setKnob = (dx, dy) => knob.style.transform = `translate(${dx}px, ${dy}px)`;
+  function resetJoy() { joy.active = false; joy.x = 0; joy.fwd = 0; joyId = null; setKnob(0, 0); }
+  function updateJoy(tch) {
+    let dx = tch.clientX - joyCx, dy = tch.clientY - joyCy;
+    const d = Math.hypot(dx, dy);
+    if (d > R) { dx = dx / d * R; dy = dy / d * R; }
+    setKnob(dx, dy);
+    joy.x = dx / R;             // 右が正（横移動）
+    joy.fwd = -dy / R;          // 上が前進（正）
+    joy.active = true;
+  }
+  const isControl = el => el && el.closest && el.closest('#joystick, .touchBtn');
+
+  joyEl.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const tch = e.changedTouches[0];
+    joyId = tch.identifier;
+    const r = joyEl.getBoundingClientRect();
+    joyCx = r.left + r.width / 2; joyCy = r.top + r.height / 2;
+    updateJoy(tch);
+  }, { passive: false });
+
+  // 画面ドラッグで視点（スティック/ボタン以外の指）
+  gameDiv.addEventListener('touchstart', e => {
+    for (const tch of e.changedTouches) {
+      if (isControl(tch.target)) continue;
+      if (lookId === null) { lookId = tch.identifier; lookX = tch.clientX; lookY = tch.clientY; }
+    }
+  }, { passive: false });
+  gameDiv.addEventListener('touchmove', e => {
+    for (const tch of e.changedTouches) {
+      if (tch.identifier === joyId) { e.preventDefault(); updateJoy(tch); }
+      else if (tch.identifier === lookId) { e.preventDefault(); applyLook(tch.clientX - lookX, tch.clientY - lookY); lookX = tch.clientX; lookY = tch.clientY; }
+    }
+  }, { passive: false });
+  function endTouch(e) {
+    for (const tch of e.changedTouches) {
+      if (tch.identifier === joyId) resetJoy();
+      if (tch.identifier === lookId) lookId = null;
+    }
+  }
+  gameDiv.addEventListener('touchend', endTouch);
+  gameDiv.addEventListener('touchcancel', endTouch);
+
+  // ボタン
+  const dashBtn = document.getElementById('btnDash');
+  dashBtn.addEventListener('touchstart', e => { e.preventDefault(); dashOn = true; dashBtn.classList.add('pressed'); }, { passive: false });
+  const dashEnd = () => { dashOn = false; dashBtn.classList.remove('pressed'); };
+  dashBtn.addEventListener('touchend', dashEnd);
+  dashBtn.addEventListener('touchcancel', dashEnd);
+  document.getElementById('btnMap').addEventListener('touchstart', e => {
+    e.preventDefault();
+    mapVisible = !mapVisible;
+    document.getElementById('minimapWrap').style.display = mapVisible ? 'block' : 'none';
+  }, { passive: false });
+  document.getElementById('btnExit').addEventListener('touchstart', e => { e.preventDefault(); exitGame(); }, { passive: false });
+})();
 
 // キー入力
 document.addEventListener('keydown', e => {
